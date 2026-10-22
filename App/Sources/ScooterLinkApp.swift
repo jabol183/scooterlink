@@ -8,6 +8,9 @@ struct ScooterLinkApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(client)
+                .onOpenURL { url in
+                    client.music.shortcutDidReturn(url)
+                }
                 .preferredColorScheme(.dark)
                 .tint(.orange)
         }
@@ -127,7 +130,7 @@ struct DevicesView: View {
                 }
                 Toggle("Show all Bluetooth devices", isOn: $client.showAllDevices)
             } footer: {
-                Text("Before the first connect: delete the RoadSync phone pairing on the PCX dashboard, so the scooter accepts this app's key.")
+                Text("Before the first connect: remove any existing RoadSync phone pairing on the Honda dashboard, so the scooter accepts this app's key.")
             }
             Section("Found") {
                 ForEach(client.devices.filter { client.showAllDevices || $0.isHonda }) { device in
