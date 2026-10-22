@@ -61,9 +61,13 @@ References:
 - Scenic's approach: https://scenic.app/help/control-music-playback-for-all-media-apps-not-just-apple-music/
 - Apple media player: https://developer.apple.com/documentation/mediaplayer/mpmusicplayercontroller/systemmusicplayer
 
+## Signed TestFlight without a Mac
+
+The manual [TestFlight GitHub Action](.github/workflows/testflight.yml) builds, signs and uploads an IPA directly to App Store Connect after you configure Apple signing credentials. Setup works from Windows with WSL; see [TestFlight signing and install guide](docs/TESTFLIGHT_SETUP.md). It does not run automatically on every push or release the app publicly.
+
 ## Building for App Store / TestFlight
 
-Requires macOS, Xcode 16+, and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+For a local build, use macOS with Xcode 26+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
 cd App
