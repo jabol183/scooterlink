@@ -143,6 +143,20 @@ final class MusicController: ObservableObject {
         return feedback
     }
 
+    /// The callback only reports that the Shortcuts handoff finished, not whether
+    /// YouTube Music or Spotify actually changed tracks.
+    func shortcutDidReturn(_ url: URL) {
+        guard url.scheme == ShortcutURL.callbackScheme,
+              url.host == "shortcut-complete" else { return }
+        let error = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "errorMessage" })?.value
+        if let error, !error.isEmpty {
+            feedback = "Shortcut error: \(error)"
+        } else {
+            feedback = "Returned from Shortcuts. Verify playback in your music app."
+        }
+    }
+
     func play(_ collection: MPMediaItemCollection) {
         guard isAuthorized, !collection.items.isEmpty else {
             feedback = "Enable Apple Music access and choose at least one song."
