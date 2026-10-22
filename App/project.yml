@@ -29,4 +29,8 @@ targets:
       path: Sources/Info.plist
       properties:
         UIBackgroundModes: [bluetooth-central]
+        NSAppleMusicUsageDescription: "Access your Music library to select tracks and use Honda handlebar music controls."
+        CFBundleURLTypes:
+          - CFBundleURLName: "com.jabol183.scooterlink.shortcuts"
+            CFBundleURLSchemes: [scooterlinkmusic]
         UILaunchScreen: {}
