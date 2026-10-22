@@ -8,8 +8,9 @@ struct HomeView: View {
         ScrollView {
             VStack(spacing: 16) {
                 HeroCard()
+                MusicCard(music: client.music)
                 LastPressCard()
-                ButtonMapCard()
+                ButtonMapCard(music: client.music)
                 Text("Turn the key and ScooterLink connects by itself. Keep it in the app switcher: iOS won't relaunch an app you swipe away.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -56,9 +57,9 @@ extension SABClient {
         case .securing, .assigning:
             return .init(title: "Pairing…", detail: "Setting up the handlebar buttons", symbol: "lock.shield.fill", tone: .working)
         case .ready where dashMode == .phone:
-            return .init(title: "Ready to ride", detail: "Buttons control your music", symbol: "checkmark.circle.fill", tone: .good)
+            return .init(title: "Ready to ride", detail: "Music controls connected", symbol: "checkmark.circle.fill", tone: .good)
         case .ready:
-            return .init(title: "Connected", detail: "Dash is on its own screen. Press Mute to switch", symbol: "rectangle.on.rectangle", tone: .warning)
+            return .init(title: "Connected", detail: "Switch to phone mode for handlebar music controls", symbol: "rectangle.on.rectangle", tone: .warning)
         case .failed:
             return .init(title: "Something went wrong", detail: "Open Diagnostics for details", symbol: "exclamationmark.triangle.fill", tone: .bad)
         }
@@ -94,7 +95,7 @@ private struct HeroCard: View {
                 .overlay(alignment: .bottomLeading) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("ScooterLink").font(.system(.title, design: .rounded).weight(.bold))
-                        Text(client.connectedName ?? "Honda PCX").font(.subheadline).opacity(0.85)
+                        Text(client.connectedName ?? "Compatible Honda dashboard").font(.subheadline).opacity(0.85)
                     }
                     .foregroundStyle(.white)
                     .padding(16)
@@ -192,6 +193,7 @@ private struct LastPressCard: View {
 }
 
 private struct ButtonMapCard: View {
+    @ObservedObject var music: MusicController
     private let rows: [ButtonFunction] = [.select, .back, .next, .previous, .volumeMute]
 
     var body: some View {
@@ -207,7 +209,8 @@ private struct ButtonMapCard: View {
                             .background(.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         Text(function.label).font(.body.weight(.medium))
                         Spacer()
-                        Text(function.action).font(.subheadline).foregroundStyle(.secondary)
+                        Text(music.source == .shortcuts && [.select, .back, .next, .previous].contains(function) ? "Shortcut (unlocked)" : function.action)
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
             }

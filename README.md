@@ -1,148 +1,105 @@
-# ScooterLink
+# ScooterLink — Music-first App Store candidate
 
-**Control *any* music app on your iPhone from the handlebar buttons of a Honda PCX (2025).**
-Spotify, YouTube Music, podcasts, audiobooks… whatever is playing. No Honda app needed.
+Independent iOS companion for Honda motorcycles/scooters with compatible RoadSync Bluetooth dashboards. Tested upstream with **Honda PCX 125 (2025)**. The **XL750 Transalp (2023)** has been scanned and its main BLE service and button characteristic UUIDs matched the upstream PCX protocol. **Full pairing and handlebar actions have not yet been tested on the Transalp**.
 
-![How ScooterLink works](docs/images/how-it-works.svg)
+**This branch is for an App Store submission candidate, not a claim that Apple has approved it.** It uses Apple's public frameworks and documented Shortcuts URL scheme. Navigation is deliberately out of scope.
 
-<p align="center"><img src="docs/images/app.png" width="320" alt="ScooterLink home screen"></p>
+## Music features
 
-## Why this exists
+| Feature | Apple Music | All apps (Shortcuts beta) |
+| --- | --- | --- |
+| Honda BLE pairing, handlebar button notifications | Yes (on compatible dashboards) | Yes |
+| Select / Back → Play/Pause | Uses public `MPMusicPlayerController.systemMusicPlayer` | Runs user's Play/Pause Shortcut |
+| Next / Previous | Music app's own queue | Runs user's Skip Forward / Skip Backward Shortcut |
+| Track title / artist | From your Music library (with permission) | Not available through public iOS APIs |
+| Locked iPhone | BLE may wake app; Music commands need device testing | **No**: app must be foreground and iPhone unlocked |
+| Third-party services like YouTube Music and Spotify | No | **Experimental**, depends on Shortcuts/current player |
 
-Honda's RoadSync app is the official way to link a phone to the PCX dashboard. On iPhone its
-music controls only work with **Apple Music**. If you live in Spotify, the nice handlebar
-switch is useless for music. (iOS doesn't give apps a public way to control *other* apps'
-playback, so Honda took the easy road.)
+**Do not claim YouTube Music handlebar control while the phone is locked.** There is no confirmed public-API software-only method. The Shortcuts workaround is a foreground, unlocked-phone experiment.
 
-My previous scooter did play/pause/next for *whatever* was playing. This one couldn't.
-So I reverse-engineered how the scooter talks to the phone and wrote a tiny replacement.
+No Spotify SDK, YouTube unofficial API, private iOS framework, undocumented system command, or audio-session injection is included.
 
-![Before and after](docs/images/before-after.svg)
+## Honda pairing
 
-## What it does
+1. Park the bike. Enable the compatible RoadSync Bluetooth dashboard.
+2. Remove any existing RoadSync phone pairing **if necessary** (this resets the bike's stored phone key).
+3. In ScooterLink: Diagnostics → Devices → Scan → choose `HONDA BTU ...`.
+4. Grant Bluetooth permissions and let the existing RSA/AES authentication complete. This is still unverified on the 2023 Transalp.
+5. Use the home screen to select a music mode. Toggle Apple Music permission if using Apple Music.
 
-| Handlebar button | Action |
-|---|---|
-| **Select** | play / pause |
-| **Back** | play / pause |
-| **Next** | next track |
-| **Previous** | previous track |
-| Mute (on the scooter's own screen) | bring the phone screen back |
+Pairing keys are stored locally in the iPhone Keychain. Dashboard drawing and experimental colour changes stay disabled; firmware update services are never written to.
 
-- **Connects by itself.** Turn the key and iOS reconnects in the background. No need to open the app.
-- **Switches the dash to phone mode automatically**, so the buttons are passed to the phone.
-- **One press = one action.** Holding a button makes the dash auto-repeat; ScooterLink ignores the repeats.
-- **Lean.** No GPS, no network, no account, no timers. It only wakes up when the scooter sends something over Bluetooth.
+## Apple Music
 
-## How it works
+1. In the home screen Music card choose **Apple Music**.
+2. Tap **Enable Apple Music access** and grant media-library permission.
+3. Open the Music app to begin playback, or select tracks through **Choose songs from Music library**.
+4. Test Play/Pause, Previous, and Next on screen.
+5. Once the bike is paired, test Select/Back, Previous, and Next on the handlebar.
 
-The PCX dashboard has a Bluetooth Low Energy unit (it shows up as `HONDA BTU …`). The phone
-talks to it with Honda's own little protocol. I worked it out by studying how the official
-Android app talks to the scooter and by logging the traffic. Full write-up:
-**[docs/PROTOCOL.md](docs/PROTOCOL.md)**.
+Apple Music system player controls the Music app's playback queue; it does **not** control YouTube Music or Spotify.
 
-![Connection sequence](docs/images/handshake.svg)
+## Experimental YouTube Music / Spotify using Shortcuts
 
-1. **Pairing.** The first time, the phone sends a fresh RSA-1024 public key. The scooter answers
-   with a random 16-byte AES key encrypted to it. ScooterLink keeps that key in the iOS Keychain.
-2. **Every ride.** The phone proves it still has the key with one AES-encrypted message.
-3. **Button setup.** The phone registers which button functions it wants (27 tiny writes).
-4. **Phone screen.** The phone asks the dash to switch to "phone mode". In scooter mode the dash
-   keeps most buttons for its own menus.
-5. **Presses.** Every press arrives as a single byte (`01` previous, `02` next, `03` back,
-   `04` select …). ScooterLink turns it into a system-wide media command, the same kind
-   Control Center sends.
+This is an optional alternative inspired by Scenic Motorcycle Navigation's published Shortcuts method. It uses documented Apple `shortcuts://x-callback-url/run-shortcut` links, not private system media commands.
 
-Honda limited it to one app. Now it controls any of them.
+1. Start music playing manually in YouTube Music / Spotify.
+2. In Apple's **Shortcuts** app, create three shortcuts. Name them exactly (or change the names in ScooterLink):
+   - `Honda Music Play Pause`: add Shortcuts' **Play/Pause** action (target current iPhone).
+   - `Honda Music Next`: add **Skip Forward** action.
+   - `Honda Music Previous`: add **Skip Backward** action.
+3. **Run each shortcut manually in Shortcuts** and verify it actually affects the music player. If the player doesn't support the chosen skip action, this technique cannot fix it.
+4. Open ScooterLink, select **All apps (Beta)**, and confirm the three shortcut names match.
+5. With the phone **unlocked** and ScooterLink **foregrounded**, press a handlebar music button or use the test controls on the Music card.
+6. Shortcuts should open, run the user shortcut, and return to ScooterLink via an x-callback URL. Device testing is required on your installed iOS version.
 
-## Download (no Mac needed)
+**Caveats:** App switching can be visible/slow. iOS may require one-time permissions. Shortcuts may return without controlling playback. The app only knows whether it could launch Shortcuts, not whether a song actually changed. This is **not hands-free operation on a locked iPhone** and should not be used to operate the phone while moving.
 
-1. Get **`ScooterLink-x.y.ipa`** from the [latest release](https://github.com/gdorgian/ScooterLink/releases/latest).
-2. Install it with a sideloading tool and your own Apple ID:
-   - **[SideStore](https://sidestore.io)** or **[AltStore](https://altstore.io)**: on the iPhone, free Apple ID.
-     They re-sign the app every 7 days for you (AltStore needs AltServer on your computer for that).
-   - **[Sideloadly](https://sideloadly.io)**: from a Mac or PC, free Apple ID (re-install every 7 days).
-   - Paid Apple developer account: no 7-day limit.
-3. Pair it with the scooter (see **First ride** below).
+References:
+- Apple Shortcuts URL scheme: https://support.apple.com/guide/shortcuts/run-a-shortcut-from-a-url-apd624386f42/ios
+- Apple Shortcuts x-callback-url: https://support.apple.com/guide/shortcuts/use-x-callback-url-apdcd7f20a6f/ios
+- Scenic's approach: https://scenic.app/help/control-music-playback-for-all-media-apps-not-just-apple-music/
+- Apple media player: https://developer.apple.com/documentation/mediaplayer/mpmusicplayercontroller/systemmusicplayer
 
-It can't be on the App Store: the "control any app" part uses a private iOS framework (MediaRemote).
+## Building for App Store / TestFlight
 
-**Android?** Not yet. If you want it, 👍 the [Android issue](https://github.com/gdorgian/ScooterLink/issues/1).
-Android allows this officially, so it's very doable if enough riders want it.
-
-## First ride
-
-1. In the dash's Bluetooth menu, **delete RoadSync's phone pairing** (the scooter keeps one phone key at a time).
-2. Turn the ignition on, open ScooterLink, tap the **wrench → Devices → Scan**, and tap `HONDA BTU …`. Accept the iOS pairing prompt.
-3. Done. From now on it connects by itself whenever you turn the key. Don't swipe the app away
-   in the app switcher, because iOS won't relaunch an app you force-quit.
-
-Requirements: Honda PCX 2025 with the TFT dash and RoadSync support. Tested on a PCX125 2025;
-other RoadSync bikes probably speak the same protocol but are untested.
-
-## Build it yourself
-
-You need a Mac with Xcode 16+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Requires macOS, Xcode 16+, and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
-git clone https://github.com/gdorgian/ScooterLink.git
-cd ScooterLink/App
-cp Config/Signing.example.xcconfig Config/Signing.xcconfig   # put your Team ID + a bundle ID in it
-xcrun devicectl list devices                                  # find your iPhone's identifier
-bash install-device.sh <your-iphone-identifier>
+cd App
+cp Config/Signing.example.xcconfig Config/Signing.xcconfig
+# Set your actual DEVELOPMENT_TEAM and unique PRODUCT_BUNDLE_IDENTIFIER
+xcodegen generate
+xcodebuild -project ScooterLink.xcodeproj -scheme ScooterLink \
+  -destination 'generic/platform=iOS' -configuration Release \
+  CODE_SIGNING_ALLOWED=NO build
 ```
 
-**Make it yours:** drop a photo of your own bike into `App/Sources/Assets.xcassets` as an image set
-called `Logo` (shown on the home screen) and an `AppIcon` (1024×1024), then set
-`ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` in `Config/Signing.xcconfig`. That folder is
-git-ignored, so your photo never ends up in a commit.
+For distribution, set your Apple Developer team, a unique bundle identifier and provisioning, create an Archive in Xcode or a signed build from CI, then upload to App Store Connect. Do not submit until hardware interactions and shortcut behavior are tested on a physical iPhone.
 
-## Known limits
+The music-card controls allow testing without Honda hardware, but Apple also requires [a physical-device video showing pairing with required hardware](https://developer.apple.com/help/app-review/before-submitting-for-review/complete-review). See [App Store review checklist](docs/APP_STORE_REVIEW.md).
 
-- **AirPods noise control can't be switched.** iOS accepts the private call from an app and then
-  ignores it. Nobody has made this work on a non-jailbroken iPhone.
-- **No "now playing" text.** iOS hides the current track from third-party apps.
-- **No speed from the scooter.** The PCX doesn't send it over Bluetooth.
-- **Volume:** the PCX switch gear has no volume buttons.
-
-## ⚠️ Be careful with the dash
-
-While experimenting, I sent the dash **custom colour slots (IDs above 18) and a custom-drawn
-screen**. After that the dash refused to show the phone screen at all, even across ignition
-cycles. The fix was to **delete the pairing on the bike, forget `HONDA BTU` in iOS Bluetooth
-settings, and pair again**.
-
-That's why the screen-drawing and custom-colour code in this repo is switched **off**
-(`Features` in `App/Sources/DashScreen.swift`). If you experiment, change one thing at a time,
-and **never write to the firmware-update (DFU) service.**
-
-## Project layout
-
-```
-App/
-  Sources/SABProtocol.swift    UUIDs, button codes, button/colour registration
-  Sources/SABCrypto.swift      RSA → AES key exchange, validation, CRC-16
-  Sources/SABClient.swift      CoreBluetooth: auto-connect, handshake, phone screen, buttons
-  Sources/ButtonActions.swift  button → system media command
-  Sources/HomeView.swift       home screen: status, last button, button map
-  Sources/DashScreen.swift     dash screen encoder (experimental, off)
-  Tests/main.swift             crypto/encoder self-tests (swiftc, runs on a Mac)
-docs/PROTOCOL.md               the protocol, as far as it's known
-```
-
-Run the self-tests on a Mac:
+### Tests
 
 ```bash
-cd App && xcrun swiftc -o /tmp/sl-test Sources/SABCrypto.swift Sources/SABProtocol.swift Sources/DashScreen.swift Tests/main.swift && /tmp/sl-test
+cd App
+swiftc Sources/ShortcutURL.swift Tests/Shortcuts/main.swift -o /tmp/scl-shortcuts
+/tmp/scl-shortcuts
+# Upstream crypto/protocol tests (on macOS):
+xcrun swiftc -o /tmp/sl-test Sources/SABCrypto.swift Sources/SABProtocol.swift Sources/DashScreen.swift Tests/main.swift
+/tmp/sl-test
 ```
+
+## Scope / safety
+
+- No navigation or location access.
+- No analytics, servers, third-party SDKs, subscriptions or ads.
+- Does not read tracks from YouTube Music or Spotify.
+- No custom TFT drawing. No firmware writes.
+- Bluetooth GATT and Keychain access only for connecting to the motorcycle.
+- The Shortcuts bridge is an opt-in experimental feature requiring user-created shortcuts.
+- Never manipulate phone controls while riding.
 
 ## Legal
 
-ScooterLink is an independent project. It is **not affiliated with, endorsed by, or supported by
-Honda**. "Honda", "PCX" and "RoadSync" are trademarks of their owners. This repository contains
-**no Honda code or files**: only original code and a description of the Bluetooth messages,
-written for interoperability. Use it at your own risk, and don't fiddle with your phone while riding.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+This project is independent of Honda, Apple, Google, Spotify and Scenic, and is not endorsed or affiliated with them. Third-party names identify compatibility only. Original ScooterLink code remains under the MIT license; retain all upstream copyright notices. See [LICENSE](LICENSE).

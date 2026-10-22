@@ -1,43 +1,20 @@
 import Foundation
 
-/// System-wide media control through the private MediaRemote framework (what Control
-/// Center uses). Works on whatever app is playing, if iOS lets a sideloaded app call it.
-enum MediaControl {
-    enum Command: UInt32 {
-        case play = 0, pause = 1, togglePlayPause = 2, next = 4, previous = 5
-    }
-
-    private typealias SendCommand = @convention(c) (UInt32, CFDictionary?) -> Bool
-
-    private static let handle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW)
-
-    private static func symbol<T>(_ name: String, as type: T.Type) -> T? {
-        guard let handle, let pointer = dlsym(handle, name) else { return nil }
-        return unsafeBitCast(pointer, to: type)
-    }
-
-    private static let sendCommand = symbol("MRMediaRemoteSendCommand", as: SendCommand.self)
-
-    @discardableResult
-    static func send(_ command: Command) -> String {
-        guard let sendCommand else { return "MediaRemote not available" }
-        return sendCommand(command.rawValue, nil) ? "\(command) sent" : "\(command) REFUSED by iOS"
-    }
-}
-
-/// What each handlebar button does.
+/// Maps handlebar events to public, App Store-eligible music integrations.
+/// All-app playback uses Apple's documented Shortcuts URL scheme, not MediaRemote.
 enum ButtonActions {
-    static func handle(_ function: ButtonFunction, log: @escaping (String) -> Void) {
+    static func handle(_ function: ButtonFunction, music: MusicController, log: @escaping (String) -> Void) {
+        let command: MusicCommand
         switch function {
         case .select, .back:
-            log(MediaControl.send(.togglePlayPause))
+            command = .togglePlayPause
         case .next:
-            log(MediaControl.send(.next))
+            command = .next
         case .previous:
-            log(MediaControl.send(.previous))
+            command = .previous
         default:
-            break
+            return
         }
+        log(music.perform(command))
     }
 }
-
