@@ -54,6 +54,7 @@ final class SABClient: NSObject, ObservableObject {
     private var readyAt: Date?
     private var setupTask: UIBackgroundTaskIdentifier = .invalid
     let ride = RideState()
+    let music = MusicController()
 
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
@@ -296,8 +297,8 @@ final class SABClient: NSObject, ObservableObject {
         var key = KeyStore.load(for: p.identifier)
         if alreadyKeyed && key == nil {
             throw GATTError(description: """
-                The scooter is already paired with another phone/app (RoadSync). \
-                Delete the phone pairing in the PCX dashboard's Bluetooth/RoadSync menu, \
+                The dashboard is already paired with another phone/app (RoadSync). \
+                Delete the phone pairing in your Honda dashboard's Bluetooth/RoadSync menu, \
                 turn the ignition off and on, then connect again.
                 """)
         }
@@ -611,7 +612,7 @@ extension SABClient: CBPeripheralDelegate {
                     return
                 }
                 lastAction = (function, Date())
-                ButtonActions.handle(function) { [weak self] in self?.note("   ↳ \($0)") }
+                ButtonActions.handle(function, music: music) { [weak self] in self?.note("   ↳ \($0)") }
                 if Features.drawOnDash {
                     Task { @MainActor [weak self] in
                         try? await Task.sleep(nanoseconds: 600_000_000)
