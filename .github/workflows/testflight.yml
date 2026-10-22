@@ -1,0 +1,198 @@
+name: Build and upload ScooterLink to TestFlight
+
+# Manually triggered to avoid unexpected macOS runner costs.
+# This workflow is available from Actions once merged into the default branch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scooterlink-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    if: github.ref == 'refs/heads/main'
+    name: Sign iOS IPA and upload to TestFlight
+    runs-on: macos-26
+    timeout-minutes: 55
+    env:
+      BUNDLE_ID: com.jabol183.scooterlink
+      PROFILE_NAME: AppStore com.jabol183.scooterlink
+      TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      ASC_ISSUER_ID: ${{ vars.APPSTORE_ISSUER_ID }}
+      ASC_KEY_ID: ${{ vars.APPSTORE_API_KEY_ID }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Check Apple signing prerequisites
+        shell: bash
+        env:
+          ASC_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          SIGNING_CERTIFICATE: ${{ secrets.APPSTORE_CERTIFICATES_FILE_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.APPSTORE_CERTIFICATES_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for var in TEAM_ID ASC_ISSUER_ID ASC_KEY_ID ASC_PRIVATE_KEY SIGNING_CERTIFICATE SIGNING_PASSWORD; do
+            if [[ -z "${!var}" ]]; then
+              echo "::error::Missing ${var}. See docs/TESTFLIGHT_SETUP.md for the exact GitHub variable/secret name."
+              missing=1
+            fi
+          done
+          if [[ "${missing}" -ne 0 ]]; then exit 1; fi
+          if [[ ! "${TEAM_ID}" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "::error::APPLE_TEAM_ID must be your 10-character Apple Developer Team ID"
+            exit 1
+          fi
+          echo "Apple distribution configuration is present. Actual signing will be verified at archive/export."
+
+      - name: Confirm Xcode 26 and install XcodeGen
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -version | grep -q 'Xcode 26'
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen --version
+
+      - name: Reject private media APIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RnE '(MRMediaRemote|dlopen[[:space:]]*\(|dlsym[[:space:]]*\(|PrivateFrameworks/MediaRemote)' App/Sources; then
+            echo "::error::App Store build contains private media API references"
+            exit 1
+          fi
+
+      - name: Run Shortcuts URL tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd App
+          swiftc Sources/ShortcutURL.swift Tests/Shortcuts/main.swift -o "${RUNNER_TEMP}/shortcuts-test"
+          "${RUNNER_TEMP}/shortcuts-test"
+
+      - name: Generate Xcode project
+        shell: bash
+        run: cd App && xcodegen generate
+
+      - name: Import Apple Distribution certificate
+        uses: Apple-Actions/import-codesign-certs@v7
+        with:
+          p12-file-base64: ${{ secrets.APPSTORE_CERTIFICATES_FILE_BASE64 }}
+          p12-password: ${{ secrets.APPSTORE_CERTIFICATES_PASSWORD }}
+
+      - name: Download App Store provisioning profile
+        id: profiles
+        uses: Apple-Actions/download-provisioning-profiles@v7
+        with:
+          bundle-id: com.jabol183.scooterlink
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+
+      - name: Validate matching provisioning profile
+        shell: bash
+        env:
+          PROFILES_JSON: ${{ steps.profiles.outputs.profiles }}
+        run: |
+          set -euo pipefail
+          jq -e --arg name "${PROFILE_NAME}" 'any(.[]; .name == $name and .type == "IOS_APP_STORE")' <<< "${PROFILES_JSON}" > /dev/null || {
+            echo "::error::No active profile named ${PROFILE_NAME} for ${BUNDLE_ID}. Create it in Apple Developer first."
+            exit 1
+          }
+
+      - name: Create distribution export options
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import plistlib
+          from pathlib import Path
+
+          opts = {
+              "method": "app-store-connect",
+              "destination": "export",
+              "signingStyle": "manual",
+              "teamID": os.environ["TEAM_ID"],
+              "provisioningProfiles": {
+                  os.environ["BUNDLE_ID"]: os.environ["PROFILE_NAME"],
+              },
+              "uploadSymbols": True,
+          }
+          with (Path(os.environ["RUNNER_TEMP"]) / "ExportOptions.plist").open("wb") as handle:
+              plistlib.dump(opts, handle)
+          PY
+          plutil -lint "${RUNNER_TEMP}/ExportOptions.plist"
+
+      - name: Archive signed iOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd App
+          xcodebuild -quiet \
+            -project ScooterLink.xcodeproj \
+            -scheme ScooterLink \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "${RUNNER_TEMP}/ScooterLink.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM="${TEAM_ID}" \
+            PROVISIONING_PROFILE_SPECIFIER="${PROFILE_NAME}" \
+            PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
+            archive
+
+      - name: Export signed IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -quiet -exportArchive \
+            -archivePath "${RUNNER_TEMP}/ScooterLink.xcarchive" \
+            -exportPath "${RUNNER_TEMP}/export" \
+            -exportOptionsPlist "${RUNNER_TEMP}/ExportOptions.plist"
+
+          ipa="$(find "${RUNNER_TEMP}/export" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
+          if [[ -z "${ipa}" ]]; then
+            echo "::error::Xcode export did not produce an IPA"
+            exit 1
+          fi
+          mkdir -p dist
+          cp "${ipa}" dist/ScooterLink.ipa
+          mkdir -p "${RUNNER_TEMP}/app-verify"
+          unzip -q dist/ScooterLink.ipa -d "${RUNNER_TEMP}/app-verify"
+          codesign --verify --deep --strict --verbose=2 "${RUNNER_TEMP}/app-verify/Payload/ScooterLink.app"
+          echo "Signed IPA ready for upload."
+          echo "Build number: ${GITHUB_RUN_NUMBER}"
+          shasum -a 256 dist/ScooterLink.ipa
+
+      - name: Upload signed IPA to TestFlight
+        uses: Apple-Actions/upload-testflight-build@v5
+        with:
+          app-path: dist/ScooterLink.ipa
+          app-type: ios
+          issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          backend: appstore-api
+          wait-for-processing: 'false'
+
+      - name: Report upload
+        shell: bash
+        run: |
+          {
+            echo "## ScooterLink TestFlight upload submitted"
+            echo ""
+            echo "- Bundle ID: \`${BUNDLE_ID}\`"
+            echo "- Version: 1.2, build \`${GITHUB_RUN_NUMBER}\`"
+            echo "- Apple must process the binary before it appears in TestFlight."
+            echo "- Open App Store Connect > ScooterLink > TestFlight to assign it to an internal testing group."
+          } >> "${GITHUB_STEP_SUMMARY}"
